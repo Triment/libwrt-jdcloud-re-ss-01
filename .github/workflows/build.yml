@@ -1,0 +1,89 @@
+name: Build LibWrt JDCloud RE-SS-01
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+
+permissions:
+  contents: write
+
+env:
+  REPO_URL: https://github.com/LiBwrt/LibWrt
+  REPO_BRANCH: 25.12-nss
+  TARGET_DIR: qualcommax/ipq60xx
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install build environment
+        run: |
+          sudo apt-get update
+          sudo bash -c 'bash <(curl -sL https://build-scripts.immortalwrt.org/init_build_environment.sh)'
+
+      - name: Clone LibWrt source
+        run: |
+          git clone -b "$REPO_BRANCH" --depth 1 --single-branch "$REPO_URL" openwrt
+
+      - name: Add third-party feed
+        run: |
+          cd openwrt
+          echo "src-git kenzok8 https://github.com/kenzok8/small-package" >> feeds.conf.default
+
+      - name: Update feeds
+        run: |
+          cd openwrt
+          ./scripts/feeds update -a
+          ./scripts/feeds install -a
+
+      - name: Apply config and customize
+        run: |
+          cd openwrt
+          cp "$GITHUB_WORKSPACE/.config" .config
+          bash "$GITHUB_WORKSPACE/diy.sh"
+
+      - name: Resolve full config
+        run: |
+          cd openwrt
+          make defconfig
+
+      - name: Download sources
+        run: |
+          cd openwrt
+          make download -j"$(nproc)"
+
+      - name: Build firmware
+        run: |
+          cd openwrt
+          make -j"$(nproc)" V=s
+
+      - name: Collect firmware
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/firmware"
+          cp "openwrt/bin/targets/$TARGET_DIR"/*.bin "$GITHUB_WORKSPACE/firmware/" 2>/dev/null || true
+          cp "openwrt/bin/targets/$TARGET_DIR"/*.manifest "$GITHUB_WORKSPACE/firmware/" 2>/dev/null || true
+          ls -lh "$GITHUB_WORKSPACE/firmware/"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: jdcloud_re-ss-01_libwrt
+          path: firmware/
+
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: firmware/*
+          tag_name: v${{ github.run_number }}
+          name: LibWrt JDCloud RE-SS-01 (build ${{ github.run_number }})
+          body: |
+            京东云无线宝亚瑟 RE-SS-01 (IPQ6000 · 满血 NSS)
+            - **uboot 刷入版本**：`squashfs-factory.bin`
+            - **在线升级版本**：`squashfs-sysupgrade.bin`
+            - 默认后台：`10.0.0.1`  用户：`root`  密码：`root`
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
