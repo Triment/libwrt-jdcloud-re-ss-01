@@ -14,18 +14,18 @@
 
 ## 内置功能
 
-- **科学上网**：PassWall2
+- **科学上网**：dae
 - **文件共享**：Samba4 + USB/eMMC 自动挂载（ext4/ntfs/exfat/vfat）
 - **内网穿透 / DDNS**：DDNS-GO + 传统 DDNS（阿里云 / DNSPod）
 - **VPN**：WireGuard
-- **网络**：UPnP、dnsmasq-full
+- **网络**：UPnP、-dnsmasq-full-
 - **界面 / 工具**：Argon 主题、ttyd 网页终端、FileBrowser 网页文件管理
 
 ## 默认登录信息
 
-- 后台地址：`http://10.0.0.1`
+- 后台地址：`http://192.168.50.1`
 - 用户名：`root`
-- 密码：`root`
+- 密码：无
 
 ## 固件说明
 
