@@ -35,6 +35,7 @@ jobs:
           echo "src-git kenzok8 https://github.com/kenzok8/small-package" >> feeds.conf.default
           echo "src-git daed https://github.com/wkccd/luci-app-daed-runfiles.git;kix" >> feeds.conf.default
           echo "src-git vnt2 https://github.com/whzhni1/luci-app-vnt2" >> feeds.conf.default
+echo "src-git OAF https://github.com/destan19/OpenAppFilter" >> feeds.conf.default
       - name: Update feeds
         run: |
           cd openwrt
