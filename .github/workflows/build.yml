@@ -33,7 +33,8 @@ jobs:
         run: |
           cd openwrt
           echo "src-git kenzok8 https://github.com/kenzok8/small-package" >> feeds.conf.default
-
+          echo "src-git daed https://github.com/wkccd/luci-app-daed-runfiles.git;kix" >> feeds.conf.default
+          echo "src-git vnt2 https://github.com/whzhni1/luci-app-vnt2" >> feeds.conf.default
       - name: Update feeds
         run: |
           cd openwrt
@@ -84,6 +85,6 @@ jobs:
             京东云无线宝亚瑟 RE-SS-01 (IPQ6000 · 满血 NSS)
             - **uboot 刷入版本**：`squashfs-factory.bin`
             - **在线升级版本**：`squashfs-sysupgrade.bin`
-            - 默认后台：`10.0.0.1`  用户：`root`  密码：`root`
+            - 默认后台：`182.168.50.1`  用户：`root`  密码：无
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
