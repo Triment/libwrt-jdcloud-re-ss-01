@@ -47,8 +47,6 @@ jobs:
           cd openwrt
           ./scripts/feeds update -a
           ./scripts/feeds install -a
-            - name: Patch vnt2 postinst
-            - name: Patch vnt2 postinst
 
       - name: Patch vnt2 postinst
         run: |
