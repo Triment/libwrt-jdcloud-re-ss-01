@@ -51,13 +51,20 @@ jobs:
       - name: Patch vnt2 postinst
         run: |
           cd openwrt
-          echo "== where is vnt2-package.sh referenced =="
-          grep -rn "vnt2-package.sh" feeds/vnt2 || true
           MK=feeds/vnt2/luci-app-vnt2/Makefile
-          sed -i '/define Package\/luci-app-vnt2\/postinst/,/^endef/ s|^#!/bin/sh.*|&\n[ -n "$${IPKG_INSTROOT}" ] \&\& exit 0|' "$MK"
-          echo "== result =="
-          sed -n '/define Package\/luci-app-vnt2\/postinst/,/^endef/p' "$MK"
-          grep -q 'IPKG_INSTROOT' "$MK" || { echo "patch not applied"; exit 1; }
+          awk '
+            /^define Package\/[^\/]*\/postinst$/ { in_postinst = 1 }
+            /^endef$/ { in_postinst = 0 }
+            { print }
+            in_postinst && /^#!\/bin\/sh/ {
+              print "[ -n \"$${IPKG_INSTROOT}\" ] && exit 0"
+            }
+          ' "$MK" > "$MK.tmp"
+          mv "$MK.tmp" "$MK"
+          echo "== patched postinst =="
+          POSTINST=$(sed -n '/^define Package\/[^/]*\/postinst$/,/^endef$/p' "$MK")
+          printf '%s\n' "$POSTINST"
+          printf '%s\n' "$POSTINST" | grep -Fq '[ -n "$${IPKG_INSTROOT}" ] && exit 0' || { echo "patch not applied to postinst"; exit 1; }
 
       - name: Apply config and customize
         run: |
