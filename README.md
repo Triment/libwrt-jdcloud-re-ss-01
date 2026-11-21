@@ -17,7 +17,7 @@
 - **科学上网**：dae 用run安装器安装run版本控制面板 选[aarch64_cortex-a53]版本(https://github.com/wkccd/luci-app-daed-runfiles/releases)
 - **文件共享**：Samba4 + USB/eMMC 自动挂载（ext4/ntfs/exfat/vfat）
 - **内网穿透 / DDNS**：DDNS-GO + 传统 DDNS（阿里云 / DNSPod）
-- **VPN**：WireGuard
+- **VPN**：VNT2
 - **网络**：UPnP、-dnsmasq-full-
 - **界面 / 工具**：Liquid 主题、ttyd 网页终端、FileBrowser 网页文件管理
 

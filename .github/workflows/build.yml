@@ -60,7 +60,10 @@ jobs:
           make defconfig
           echo "== luci-theme-liquid config check =="
           grep -n "luci-theme-liquid" .config || echo "!! luci-theme-liquid 未出现在 .config 中，请检查包名/依赖 !!"
-
+      - name: Show selected packages
+        run: |
+          cd openwrt
+          grep -E '^CONFIG_PACKAGE_.*=y' .config | grep -E 'mihomo|3proxy|samba|ttyd|filebrowser|wireguard|upnp' || echo "clean"
       - name: Download sources
         run: |
           cd openwrt
@@ -96,7 +99,6 @@ jobs:
             - **在线升级版本**：`squashfs-sysupgrade.bin`
             - 默认后台：`192.168.50.1`  用户：`root`  密码：`admin@cd`
             - **主题**：luci-theme-liquid
-            - **编译时间**：${{ github.event.workflow_run.created_at }}
             - **代理**：dae 用run安装器安装run版本控制面板 选[aarch64_cortex-a53]版本(https://github.com/wkccd/luci-app-daed-runfiles/releases)
             - **异地组网**：[vnt2](https://github.com/whzhni1/luci-app-vnt2)
         env:
