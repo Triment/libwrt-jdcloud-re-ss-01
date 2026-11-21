@@ -3,7 +3,7 @@ name: Build LibWrt JDCloud RE-SS-01
 on:
   workflow_dispatch:
   push:
-    branches: [ main ]
+    branches: [main]
 
 permissions:
   contents: write
@@ -49,6 +49,7 @@ jobs:
           ./scripts/feeds install -a
             - name: Patch vnt2 postinst
             - name: Patch vnt2 postinst
+
       - name: Patch vnt2 postinst
         run: |
           cd openwrt
@@ -59,6 +60,7 @@ jobs:
           echo "== result =="
           sed -n '/define Package\/luci-app-vnt2\/postinst/,/^endef/p' "$MK"
           grep -q 'IPKG_INSTROOT' "$MK" || { echo "patch not applied"; exit 1; }
+
       - name: Apply config and customize
         run: |
           cd openwrt
