@@ -51,6 +51,8 @@ Honk 配置在 `/etc/honk/config.dae`，状态数据在 `/etc/honk/data`。日�
 
 两套固件使用相同的完整 Honk 后端和软件包，差别是默认面板。上游 `native-ui` 同时内嵌标准版和 Lite 版资源；Lite 固件仍包含两套资源，在 `/etc/honk/config.dae` 中修改 `ui` 后重启 Honk 可切换面板。
 
+RE-SS-01 的内核 FIT 镜像使用 LibWrt 的 LZMA 压缩规则，以减小带 BTF 的内核体积；内核上限仍为 `6144k`，factory 镜像的根文件系统偏移沿用设备定义。若内核仍超限，构建会失败。编译失败时，Actions 的 `honk-diagnostics-standard` 或 `honk-diagnostics-lite` Artifact 会保留编译日志、配置日志和构建配置。
+
 - **`*-squashfs-factory.bin`**：U-Boot 刷入版本（Hugo Uboot + 原厂 CDT + 大分区 GPT，首次刷机用）。
 - **`*-squashfs-sysupgrade.bin`**：在线升级版本（已刷 LibWrt 后，LuCI 内不保留配置升级用）。
 

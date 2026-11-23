@@ -157,7 +157,19 @@ jobs:
       - name: Build firmware
         run: |
           cd openwrt
-          make -j"$(nproc)" V=s
+          make -j"$(nproc)" V=s 2>&1 | tee "$RUNNER_TEMP/honk-build.log"
+
+      - name: Upload build diagnostics on failure
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: honk-diagnostics-${{ matrix.edition }}
+          path: |
+            ${{ runner.temp }}/honk-build.log
+            ${{ runner.temp }}/honk-defconfig.log
+            openwrt/.config
+          include-hidden-files: true
+          if-no-files-found: ignore
 
       - name: Collect firmware
         run: |
