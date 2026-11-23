@@ -24,6 +24,8 @@
 
 Honk 软件包使用 [daeuniverse 官方 OpenWrt 源](https://github.com/daeuniverse/openwrt-packages)，固定在提交 `e104a4930c5fc4f625f3355257626495685424f5`。构建时读取 Honk 源码固定的 Rust 工具链和 bpf-linker 版本，并校验 bpf-linker 与面板下载的 SHA-256。Honk 当前为上游 Beta 版本。
 
+DDNS-GO 前端和后端使用 LibWrt 默认的 ImmortalWrt 软件源。额外软件源只按需安装 VNT2、Honk、Honk 的 LuCI 前端和共享库、内置 BTF 占位包；已移除 kenzok8/small-package 软件源，避免重复包与不兼容的 Kconfig 定义。配置阶段会检查循环依赖和必需软件包，产物阶段会再次核对固件清单。
+
 ## 默认登录信息
 
 - 后台地址：`http://192.168.50.1`

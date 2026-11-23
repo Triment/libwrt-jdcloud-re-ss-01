@@ -47,11 +47,9 @@ jobs:
       - name: Add third-party feed
         run: |
           cd openwrt
-          echo "src-git kenzok8 https://github.com/kenzok8/small-package" >> feeds.conf.default
           echo "src-git vnt2 https://github.com/whzhni1/luci-app-vnt2" >> feeds.conf.default
           printf 'src-git daeuniverse https://github.com/daeuniverse/openwrt-packages^%s\n' "$HONK_FEED_COMMIT" >> feeds.conf.default
-          # liquid 主题不走 feeds 机制，改为直接 clone 进 package 目录，
-          # 避免和 kenzok8/small-package 里可能存在的同名包产生冲突。
+
       - name: Clone luci-theme-liquid directly into package/
         run: |
           rm -rf openwrt/package/luci-theme-liquid
@@ -61,8 +59,15 @@ jobs:
         run: |
           cd openwrt
           ./scripts/feeds update -a
-          ./scripts/feeds install -a
+          # 默认源按源安装，第三方源只安装需要的包，避免引入重复包和循环依赖。
+          for feed in nss_packages sqm_scripts_nss packages luci routing telephony video; do
+            ./scripts/feeds install -a -p "$feed"
+          done
+          ./scripts/feeds install -p vnt2 luci-app-vnt2
           ./scripts/feeds install -f -p daeuniverse honk luci-app-honk luci-lib-daeuniverse vmlinux-btf-builtin
+          for package in honk luci-app-honk luci-lib-daeuniverse vmlinux-btf-builtin; do
+            test -f "package/feeds/daeuniverse/$package/Makefile" || { echo "::error::Honk feed package was not installed: $package"; exit 1; }
+          done
 
       - name: Clone pinned Honk source
         run: |
@@ -128,9 +133,14 @@ jobs:
       - name: Resolve full config
         run: |
           cd openwrt
-          make defconfig
+          make defconfig 2>&1 | tee "$RUNNER_TEMP/honk-defconfig.log"
+          if grep -Fq 'recursive dependency detected' "$RUNNER_TEMP/honk-defconfig.log"; then
+            echo "::error::Kconfig has recursive package dependencies; see honk-defconfig.log above"
+            exit 1
+          fi
           for symbol in CONFIG_KERNEL_DEBUG_INFO_BTF CONFIG_KERNEL_CGROUP_BPF CONFIG_KERNEL_NET_NS \
             CONFIG_PACKAGE_honk CONFIG_PACKAGE_luci-app-honk CONFIG_PACKAGE_luci-lib-daeuniverse \
+            CONFIG_PACKAGE_ddns-go CONFIG_PACKAGE_luci-app-ddns-go CONFIG_PACKAGE_luci-app-vnt2 \
             CONFIG_PACKAGE_vmlinux-btf-builtin CONFIG_PACKAGE_kmod-nft-queue \
             CONFIG_PACKAGE_kmod-nfnetlink-queue CONFIG_PACKAGE_luci-theme-liquid; do
             grep -Fxq "$symbol=y" .config || { echo "::error::Required option missing: $symbol"; exit 1; }
@@ -166,7 +176,7 @@ jobs:
           done
           HONK_MANIFESTS=("$HONK_TARGET_DIR"/*.manifest)
           [ "${#HONK_MANIFESTS[@]}" -eq 1 ] || { echo "::error::Firmware manifest missing or ambiguous"; exit 1; }
-          for package in honk luci-app-honk vmlinux-btf-builtin; do
+          for package in honk luci-app-honk luci-lib-daeuniverse ddns-go luci-app-ddns-go luci-app-vnt2 vmlinux-btf-builtin; do
             grep -Eq "^$package[[:space:]]" "${HONK_MANIFESTS[0]}" || { echo "::error::Package absent from firmware: $package"; exit 1; }
           done
           if grep -E '^(luci-app-run|dae|daed[^[:space:]]*|luci-app-dae[^[:space:]]*|vmlinux-btf)[[:space:]]' "${HONK_MANIFESTS[0]}"; then
