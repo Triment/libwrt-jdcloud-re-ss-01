@@ -1,21 +1,35 @@
-name: Build LibWrt JDCloud RE-SS-01
+name: Build LibWrt JDCloud RE-SS-01 Honk
 
 on:
   workflow_dispatch:
   push:
-    branches: [main]
+    branches: [honk]
 
 permissions:
-  contents: write
+  contents: read
+
+defaults:
+  run:
+    shell: bash
 
 env:
   REPO_URL: https://github.com/LiBwrt/LibWrt
   REPO_BRANCH: 25.12-nss
   TARGET_DIR: qualcommax/ipq60xx
+  HONK_FEED_COMMIT: e104a4930c5fc4f625f3355257626495685424f5
+  HONK_GIT_TAG: v0.1.0-beta.6
+  HONK_VERSION: 0.1.0_beta6
 
 jobs:
   build:
-    runs-on: ubuntu-22.04
+    name: Honk / doona ${{ matrix.edition }}
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        edition: [standard, lite]
+    env:
+      HONK_EDITION: ${{ matrix.edition }}
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -24,6 +38,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo bash -c 'bash <(curl -sL https://build-scripts.immortalwrt.org/init_build_environment.sh)'
+          sudo apt-get install -y clang llvm libbpf-dev pkg-config cmake libclang-dev zstd
 
       - name: Clone LibWrt source
         run: |
@@ -33,8 +48,8 @@ jobs:
         run: |
           cd openwrt
           echo "src-git kenzok8 https://github.com/kenzok8/small-package" >> feeds.conf.default
-          echo "src-git run https://github.com/wukongdaily/luci-app-run" >> feeds.conf.default
           echo "src-git vnt2 https://github.com/whzhni1/luci-app-vnt2" >> feeds.conf.default
+          printf 'src-git daeuniverse https://github.com/daeuniverse/openwrt-packages^%s\n' "$HONK_FEED_COMMIT" >> feeds.conf.default
           # liquid 主题不走 feeds 机制，改为直接 clone 进 package 目录，
           # 避免和 kenzok8/small-package 里可能存在的同名包产生冲突。
       - name: Clone luci-theme-liquid directly into package/
@@ -47,6 +62,44 @@ jobs:
           cd openwrt
           ./scripts/feeds update -a
           ./scripts/feeds install -a
+          ./scripts/feeds install -f -p daeuniverse honk luci-app-honk luci-lib-daeuniverse vmlinux-btf-builtin
+
+      - name: Clone pinned Honk source
+        run: |
+          git clone --depth 1 --branch "$HONK_GIT_TAG" https://github.com/daeuniverse/honk openwrt/feeds/daeuniverse/honk/src
+          git -C openwrt/feeds/daeuniverse/honk/src log -1 --format='%H %s'
+
+      - name: Read Honk Rust toolchains
+        id: honk-toolchains
+        run: |
+          cd openwrt/feeds/daeuniverse/honk/src
+          echo "stable=$(sed -n 's/^channel *= *"\([^"]*\)"/\1/p' rust-toolchain.toml)" >> "$GITHUB_OUTPUT"
+          echo "ebpf=$(sed -n 's/^channel *= *"\([^"]*\)"/\1/p' crates/honk-ebpf/rust-toolchain.toml)" >> "$GITHUB_OUTPUT"
+
+      - name: Install Honk Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: ${{ steps.honk-toolchains.outputs.stable }}
+          targets: aarch64-unknown-linux-musl
+
+      - name: Install Honk Rust nightly
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: ${{ steps.honk-toolchains.outputs.ebpf }}
+          components: rust-src, llvm-tools
+
+      - name: Install pinned bpf-linker
+        run: |
+          source openwrt/feeds/daeuniverse/honk/src/.github/ci/pins.env
+          HONK_LINKER_DIR="$RUNNER_TEMP/honk-bpf-linker"
+          HONK_LINKER_ARCHIVE="$RUNNER_TEMP/honk-bpf-linker.tar.zst"
+          mkdir -p "$HONK_LINKER_DIR"
+          curl --fail --location --retry 3 --output "$HONK_LINKER_ARCHIVE" \
+            "https://github.com/aya-rs/bpf-linker/releases/download/v${BPF_LINKER_VERSION}/bpf-linker-x86_64-unknown-linux-musl.tar.zst"
+          printf '%s  %s\n' "$BPF_LINKER_SHA256" "$HONK_LINKER_ARCHIVE" | sha256sum -c -
+          tar --zstd -xf "$HONK_LINKER_ARCHIVE" -C "$HONK_LINKER_DIR"
+          echo "$HONK_LINKER_DIR" >> "$GITHUB_PATH"
+          "$HONK_LINKER_DIR/bpf-linker" --version
 
       - name: Patch vnt2 postinst
         run: |
@@ -76,12 +129,16 @@ jobs:
         run: |
           cd openwrt
           make defconfig
-          echo "== luci-theme-liquid config check =="
-          grep -n "luci-theme-liquid" .config || echo "!! luci-theme-liquid 未出现在 .config 中，请检查包名/依赖 !!"
-      - name: Show selected packages
-        run: |
-          cd openwrt
-          grep -E '^CONFIG_PACKAGE_.*=y' .config | grep -E 'mihomo|3proxy|samba|ttyd|filebrowser|wireguard|upnp' || echo "clean"
+          for symbol in CONFIG_KERNEL_DEBUG_INFO_BTF CONFIG_KERNEL_CGROUP_BPF CONFIG_KERNEL_NET_NS \
+            CONFIG_PACKAGE_honk CONFIG_PACKAGE_luci-app-honk CONFIG_PACKAGE_luci-lib-daeuniverse \
+            CONFIG_PACKAGE_vmlinux-btf-builtin CONFIG_PACKAGE_kmod-nft-queue \
+            CONFIG_PACKAGE_kmod-nfnetlink-queue CONFIG_PACKAGE_luci-theme-liquid; do
+            grep -Fxq "$symbol=y" .config || { echo "::error::Required option missing: $symbol"; exit 1; }
+          done
+          if grep -E '^CONFIG_PACKAGE_(luci-app-run|dae|daed[^=]*|luci-app-dae[^=]*|vmlinux-btf)=[ym]$' .config; then
+            echo "::error::Unexpected Run / dae / daed component or external BTF package selected"
+            exit 1
+          fi
       - name: Download sources
         run: |
           cd openwrt
@@ -94,30 +151,79 @@ jobs:
 
       - name: Collect firmware
         run: |
+          shopt -s nullglob
+          HONK_TARGET_DIR="openwrt/bin/targets/$TARGET_DIR"
+          HONK_IMAGES=("$HONK_TARGET_DIR"/*-squashfs-factory.bin "$HONK_TARGET_DIR"/*-squashfs-sysupgrade.bin)
+          if [ "${#HONK_IMAGES[@]}" -ne 2 ]; then
+            echo "::error::Expected factory and sysupgrade images for JDCloud RE-SS-01"
+            exit 1
+          fi
+          HONK_KERNEL_CONFIGS=(openwrt/build_dir/target-*/linux-qualcommax_ipq60xx/linux-*/.config)
+          [ "${#HONK_KERNEL_CONFIGS[@]}" -eq 1 ] || { echo "::error::Kernel configuration missing or ambiguous"; exit 1; }
+          for symbol in CONFIG_BPF CONFIG_BPF_SYSCALL CONFIG_BPF_JIT CONFIG_DEBUG_INFO_BTF \
+            CONFIG_CGROUP_BPF CONFIG_NET_SCHED CONFIG_NET_CLS_ACT CONFIG_NET_XGRESS CONFIG_NET_NS; do
+            grep -Fxq "$symbol=y" "${HONK_KERNEL_CONFIGS[0]}" || { echo "::error::Kernel missing Honk support: $symbol"; exit 1; }
+          done
+          HONK_MANIFESTS=("$HONK_TARGET_DIR"/*.manifest)
+          [ "${#HONK_MANIFESTS[@]}" -eq 1 ] || { echo "::error::Firmware manifest missing or ambiguous"; exit 1; }
+          for package in honk luci-app-honk vmlinux-btf-builtin; do
+            grep -Eq "^$package[[:space:]]" "${HONK_MANIFESTS[0]}" || { echo "::error::Package absent from firmware: $package"; exit 1; }
+          done
+          if grep -E '^(luci-app-run|dae|daed[^[:space:]]*|luci-app-dae[^[:space:]]*|vmlinux-btf)[[:space:]]' "${HONK_MANIFESTS[0]}"; then
+            echo "::error::Unexpected legacy proxy package in firmware"
+            exit 1
+          fi
           mkdir -p "$GITHUB_WORKSPACE/firmware"
-          cp "openwrt/bin/targets/$TARGET_DIR"/*.bin "$GITHUB_WORKSPACE/firmware/" 2>/dev/null || true
-          cp "openwrt/bin/targets/$TARGET_DIR"/*.manifest "$GITHUB_WORKSPACE/firmware/" 2>/dev/null || true
+          for file in "${HONK_IMAGES[@]}" "${HONK_MANIFESTS[@]}"; do
+            cp "$file" "$GITHUB_WORKSPACE/firmware/honk-doona-${HONK_EDITION}-${file##*/}"
+          done
+          cp openwrt/.config "$GITHUB_WORKSPACE/firmware/honk-doona-${HONK_EDITION}-config.buildinfo"
+          cp openwrt/feeds/daeuniverse/honk/files/config.dae "$GITHUB_WORKSPACE/firmware/honk-doona-${HONK_EDITION}-config.dae"
+          printf 'Honk: %s\nFeed: %s\nPanel: %s\nLibWrt: %s\n' \
+            "$HONK_GIT_TAG" "$HONK_FEED_COMMIT" "$HONK_EDITION" "$(git -C openwrt rev-parse HEAD)" \
+            > "$GITHUB_WORKSPACE/firmware/honk-doona-${HONK_EDITION}-versions.txt"
+          (cd "$GITHUB_WORKSPACE/firmware" && sha256sum *.bin > "honk-doona-${HONK_EDITION}-SHA256SUMS")
           ls -lh "$GITHUB_WORKSPACE/firmware/"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v7
         with:
-          name: jdcloud_re-ss-01_libwrt
+          name: jdcloud_re-ss-01_honk_doona_${{ matrix.edition }}
+          path: firmware/
+          if-no-files-found: error
+
+  release:
+    name: Publish both Honk editions
+    needs: build
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - name: Download both firmware editions
+        uses: actions/download-artifact@v7
+        with:
+          pattern: jdcloud_re-ss-01_honk_doona_*
+          merge-multiple: true
           path: firmware/
 
       - name: Publish release
         uses: softprops/action-gh-release@v3
         with:
           files: firmware/*
-          tag_name: v${{ github.run_number }}
-          name: LibWrt JDCloud RE-SS-01 (build ${{ github.run_number }})
+          fail_on_unmatched_files: true
+          tag_name: honk-v${{ github.run_number }}
+          target_commitish: ${{ github.sha }}
+          name: LibWrt JDCloud RE-SS-01 Honk (build ${{ github.run_number }})
           body: |
             京东云无线宝亚瑟 RE-SS-01 (IPQ6000 · 满血 NSS)
-            - **uboot 刷入版本**：`squashfs-factory.bin`
-            - **在线升级版本**：`squashfs-sysupgrade.bin`
+            - **doona 标准版**：文件名前缀 `honk-doona-standard-`
+            - **doona Lite 版**：文件名前缀 `honk-doona-lite-`
+            - 两个面板版本均提供 `squashfs-factory.bin`（U-Boot）与 `squashfs-sysupgrade.bin`（在线升级）。
             - 默认后台：`192.168.50.1`  用户：`root`  密码：`admin@cd`
             - **主题**：luci-theme-liquid
-            - **代理**：dae 用run安装器安装run版本控制面板 选[aarch64_cortex-a53]版本(https://github.com/wkccd/luci-app-daed-runfiles/releases)
+            - **代理**：[Honk](https://github.com/daeuniverse/honk) `${{ env.HONK_GIT_TAG }}` + [doona](https://github.com/Zakkaus/doona)
+            - **面板入口**：`http://192.168.50.1:9527/`，在 LuCI「服务 → honk」启动后访问，首次访问创建面板管理员。
+            - Honk 默认关闭，启用后默认直连；添加节点或订阅并配置路由后使用代理。
             - **异地组网**：[vnt2](https://github.com/whzhni1/luci-app-vnt2)
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

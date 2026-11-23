@@ -1,6 +1,6 @@
-# LibWrt 京东云无线宝亚瑟 RE-SS-01 云编译
+# LibWrt 京东云无线宝亚瑟 RE-SS-01 · Honk 双面板固件
 
-基于 [LibWrt](https://github.com/LiBwrt/LibWrt)（分支 `25.12-nss`，满血 NSS）为京东云无线宝亚瑟（RE-SS-01 / IPQ6000 / 512MB / 64G eMMC）自动编译固件。
+`honk` 分支基于 [LibWrt](https://github.com/LiBwrt/LibWrt) 的 `25.12-nss` 分支，为京东云无线宝亚瑟 RE-SS-01 自动编译两套 [Honk](https://github.com/daeuniverse/honk) 固件：doona 标准面板版和 doona Lite 面板版。
 
 ## 设备信息
 
@@ -14,12 +14,15 @@
 
 ## 内置功能
 
-- **科学上网**：dae 用run安装器安装run版本控制面板 选[aarch64_cortex-a53]版本(https://github.com/wkccd/luci-app-daed-runfiles/releases)
-- **文件共享**：Samba4 + USB/eMMC 自动挂载（ext4/ntfs/exfat/vfat）
-- **内网穿透 / DDNS**：DDNS-GO + 传统 DDNS（阿里云 / DNSPod）
-- **VPN**：VNT2
-- **网络**：UPnP、-dnsmasq-full-
-- **界面 / 工具**：Liquid 主题、ttyd 网页终端、FileBrowser 网页文件管理
+- **代理**：Honk `v0.1.0-beta.6`，含 eBPF 数据路径、原生 API、Clash API 和内嵌 doona 面板。
+- **代理服务管理**：`luci-app-honk`，在 LuCI 中启动、停止、设置开机启动和编辑配置。
+- **异地组网**：VNT2。
+- **DDNS**：DDNS-GO。
+- **界面**：Liquid 主题。
+
+本分支移除 Run 安装器、dae / daed 软件包。Honk 所需的 eBPF、BTF、cgroup、网络命名空间和 NFQUEUE 内核支持保留在两套固件中。
+
+Honk 软件包使用 [daeuniverse 官方 OpenWrt 源](https://github.com/daeuniverse/openwrt-packages)，固定在提交 `e104a4930c5fc4f625f3355257626495685424f5`。构建时读取 Honk 源码固定的 Rust 工具链和 bpf-linker 版本，并校验 bpf-linker 与面板下载的 SHA-256。Honk 当前为上游 Beta 版本。
 
 ## 默认登录信息
 
@@ -27,26 +30,44 @@
 - 用户名：`root`
 - 密码：`admin@cd`
 
+## Honk 面板
+
+1. 进入 LuCI「服务 → honk」，启动服务，并按需开启开机启动。
+2. 访问 `http://192.168.50.1:9527/`，首次访问创建面板管理员。面板账号独立于 LuCI 的 root 账号。
+3. 添加节点或订阅、代理组和路由规则。默认配置使用 `br-lan`、WAN 自动识别和全直连路由。
+
+Honk 配置在 `/etc/honk/config.dae`，状态数据在 `/etc/honk/data`。日志在 LuCI 服务页面或 `logread -e honk` 中查看。默认面板监听端口 9527，沿用 OpenWrt 防火墙的 LAN 访问范围。
+
 ## 固件说明
 
-编译产物在 **Releases**（或 Actions 的 Artifacts）中，两个版本：
+每次 CI 构建产出两个面板版本，每个版本包含首次刷机和在线升级镜像，共四个 `.bin` 文件：
 
-- **`squashfs-factory.bin`** —— uboot 刷入版本（Hugo Uboot + 原厂 CDT + 大分区 GPT，首次刷机用）
-- **`squashfs-sysupgrade.bin`** —— 在线升级版本（已刷 LibWrt 后，LuCI 内不保留配置升级用）
+| 面板版本 | 默认 Honk UI 配置 | 文件名前缀 | Actions Artifact |
+|---|---|---|---|
+| doona 标准版 | `ui: 'embedded'` | `honk-doona-standard-` | `jdcloud_re-ss-01_honk_doona_standard` |
+| doona Lite 版 | `ui: 'embedded-lite'` | `honk-doona-lite-` | `jdcloud_re-ss-01_honk_doona_lite` |
+
+两套固件使用相同的完整 Honk 后端和软件包，差别是默认面板。上游 `native-ui` 同时内嵌标准版和 Lite 版资源；Lite 固件仍包含两套资源，在 `/etc/honk/config.dae` 中修改 `ui` 后重启 Honk 可切换面板。
+
+- **`*-squashfs-factory.bin`**：U-Boot 刷入版本（Hugo Uboot + 原厂 CDT + 大分区 GPT，首次刷机用）。
+- **`*-squashfs-sysupgrade.bin`**：在线升级版本（已刷 LibWrt 后，LuCI 内不保留配置升级用）。
+
+两个版本构建成功后统一发布到 **Releases**，标签为 `honk-v<构建编号>`。每个版本还附带软件包清单、完整构建配置、Honk 默认配置、版本记录和 `SHA256SUMS`。若其中一版失败，成功版仍可从 Actions 下载，Release 等两版都成功后发布。
 
 > 刷机方法：进入 Hugo Uboot，选择 `squashfs-factory.bin` 刷入；首次刷完约 5 分钟，之后重启 15 秒开机。
 
 ## 如何重新触发编译
 
-- 手动触发：仓库 `Actions` → `Build LibWrt JDCloud RE-SS-01` → `Run workflow`
-- 推送代码到 `main` 分支也会自动触发
+- 手动触发：仓库 `Actions` → `Build LibWrt JDCloud RE-SS-01 Honk` → `Run workflow`，选择 `honk` 分支。
+- 推送代码到 `honk` 分支也会自动触发两套面板固件的构建。
+- 更新 Honk 时，同步调整工作流中的 `HONK_GIT_TAG`、apk 格式的 `HONK_VERSION` 和对应软件包源提交 `HONK_FEED_COMMIT`。
 
 ## 文件结构
 
 ```
 .
-├── .github/workflows/build.yml   # GitHub Actions 编译流程
-├── .config                       # OpenWrt 种子配置（目标 + 软件包）
-├── diy.sh                        # 定制脚本（IP/密码/主题）
+├── .github/workflows/build.yml   # 标准版 / Lite 版构建矩阵与统一发布
+├── .config                       # 设备、Honk 和内核支持配置
+├── diy.sh                        # IP、密码、Liquid 主题、默认 doona 版本
 └── README.md
 ```
